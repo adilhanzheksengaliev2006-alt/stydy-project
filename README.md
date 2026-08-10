@@ -137,21 +137,28 @@ ggforest(cox_model, data = data)
 
 
 <details>
-<summary>Развернуть код проекта</summary>
+<summary>Развернуть R-код проекта</summary>
 
-```python
+```r
+ТУТ ВЕСЬ ТВОЙ R-КОД
 
+ggforest(cox_model, data = data)
+```
+
+</details>
+
+
+<details>
+<summary>А вот мой SQL-код</summary>
 
 ```python
 import pandas as pd
 import sqlite3
 import matplotlib.pyplot as plt
 
-
 MUTATIONS_FILE = "metabric_data/data_mutations.txt"
 CLINICAL_FILE = "metabric_data/data_clinical_patient.txt"
 GENE_OF_INTEREST = "TP53"
-
 
 mutations = pd.read_csv(
     MUTATIONS_FILE,
@@ -165,9 +172,7 @@ clinical = pd.read_csv(
     comment="#"
 )
 
-
 patient_ids = clinical["PATIENT_ID"].tolist()
-
 
 def find_patient(sample):
     for patient in patient_ids:
@@ -175,14 +180,11 @@ def find_patient(sample):
             return patient
     return None
 
-
 mutations["PATIENT_ID"] = mutations[
     "Tumor_Sample_Barcode"
 ].apply(find_patient)
 
-
 conn = sqlite3.connect("cancer_data.db")
-
 
 mutations.to_sql(
     "mutations",
@@ -198,7 +200,6 @@ clinical.to_sql(
     index=False
 )
 
-
 query_genes = """
 SELECT
     Hugo_Symbol AS gene,
@@ -209,14 +210,12 @@ ORDER BY patients DESC
 LIMIT 15
 """
 
-
 top_genes = pd.read_sql(
     query_genes,
     conn
 )
 
 print(top_genes)
-
 
 query_survival = f"""
 SELECT
@@ -246,7 +245,6 @@ ON clinical.PATIENT_ID = mutations.PATIENT_ID
 GROUP BY group_name
 """
 
-
 survival = pd.read_sql(
     query_survival,
     conn
@@ -254,9 +252,7 @@ survival = pd.read_sql(
 
 print(survival)
 
-
 conn.close()
-
 
 plt.figure(figsize=(8, 5))
 
@@ -277,7 +273,6 @@ plt.savefig(
     "top_mutated_genes.png",
     dpi=150
 )
-````
+```
 
 </details>
-```
