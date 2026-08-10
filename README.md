@@ -131,9 +131,11 @@ cox_model <- coxph(formula_cox, data = data)
 ggforest(cox_model, data = data)
 ```
 
-</details>
 
 sql код 
+<details>
+<summary>Развернуть код проекта</summary>
+
 ````markdown
 <details>
 <summary>Код проекта</summary>
