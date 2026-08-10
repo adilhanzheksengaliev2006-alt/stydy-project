@@ -276,7 +276,7 @@ corrplot(
   insig = "blank"
 )
 ```
-
+</details>
 
 <details>
 <summary>3. Анализ выживаемости</summary>
@@ -405,7 +405,7 @@ ggforest(
   data = data
 )
 ```
-
+</details>
 
 
 <details>
