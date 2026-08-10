@@ -132,10 +132,15 @@ ggforest(cox_model, data = data)
 ```
 
 
-sql код 
+
+
+
 
 <details>
-<summary>Код проекта</summary>
+<summary>Развернуть код проекта</summary>
+
+```python
+
 
 ```python
 import pandas as pd
