@@ -58,78 +58,88 @@
 мои скрипт на языке R:
 
 <details>
-<summary><b>Развернуть полный R-код проекта (нажмите для просмотра)</b></summary>
+<summary>1. Подготовка данных</summary>
 
-```R
+```r
 library(RSQLite)
-library(survival)
-library(survminer)
-library(corrplot)
 
-# 1. Подключение к базе данных и выгрузка данных
 con <- dbConnect(SQLite(), "cancer_data.db")
-top_genes <- c("PIK3CA", "TP53", "MUC16", "AHNAK2", "SYNE1", "KMT2C", "GATA3", "MAP3K1", "CDH1", "DNAH11")
 
-sql_parts <- sapply(top_genes, function(g) {
-  sprintf("MAX(CASE WHEN m.Hugo_Symbol = '%s' AND m.Variant_Classification != 'Silent' THEN 1 ELSE 0 END) as %s", g, g)
-})
-select_clause <- paste(sql_parts, collapse = ",\n        ")
+clinical <- dbGetQuery(
+  con,
+  "SELECT PATIENT_ID, OS_MONTHS, OS_STATUS FROM clinical"
+)
 
-query <- sprintf("
-    SELECT 
-        c.PATIENT_ID, c.OS_MONTHS, c.OS_STATUS,
-        %s
-    FROM cancer_data c
-    LEFT JOIN mutations m ON c.PATIENT_ID = m.PATIENT_ID
-    GROUP BY c.PATIENT_ID
-", select_clause)
+mutations <- dbGetQuery(
+  con,
+  "SELECT PATIENT_ID, Hugo_Symbol, Variant_Classification
+   FROM mutations"
+)
 
-data <- dbGetQuery(con, query)
 dbDisconnect(con)
 
-# 2. Предобработка данных
-data\$EVENT <- ifelse(grepl("DECEASED", data\(OS_STATUS) \vert{} grepl("^1", data\)OS_STATUS), 1, 0)
-dataTIME <- as.numeric(as.character(dataOS_MONTHS))
-data <- data[!is.na(data\(TIME) & !is.na(data\)EVENT), ]
 
-# 3. Построение матрицы взаимодействий (Тест Фишера)
-n_genes <- length(top_genes)
-pval_matrix <- matrix(1, nrow = n_genes, ncol = n_genes, dimnames = list(top_genes, top_genes))
-or_matrix <- matrix(1, nrow = n_genes, ncol = n_genes, dimnames = list(top_genes, top_genes))
-mutation_matrix <- as.matrix(data[, top_genes])
+top_genes <- c(
+  "PIK3CA",
+  "TP53",
+  "MUC16",
+  "AHNAK2",
+  "SYNE1",
+  "KMT2C",
+  "GATA3",
+  "MAP3K1",
+  "CDH1",
+  "DNAH11"
+)
 
-for (i in 1:(n_genes-1)) {
-  for (j in (i+1):n_genes) {
-    tbl <- table(mutation_matrix[, i], mutation_matrix[, j])
-    full_tbl <- matrix(0, nrow=2, ncol=2)
-    full_tbl[as.numeric(rownames(tbl))+1, as.numeric(colnames(tbl))+1] <- tbl
-    f_test <- fisher.test(full_tbl)
-    log_or <- log(f_test\$estimate)
-    if (is.infinite(log_or)) log_or <- 0
-    or_matrix[i, j] <- log_or
-    or_matrix[j, i] <- log_or
-    pval_matrix[i, j] <- f_test\$p.value
-    pval_matrix[j, i] <- f_test\$p.value
-  }
+
+mutations <- mutations[
+  mutations$Variant_Classification != "Silent",
+]
+
+
+data <- clinical
+
+
+for (gene in top_genes) {
+
+  patients <- unique(
+    mutations$PATIENT_ID[
+      mutations$Hugo_Symbol == gene
+    ]
+  )
+
+  data[[gene]] <- ifelse(
+    data$PATIENT_ID %in% patients,
+    1,
+    0
+  )
 }
 
-col_palette <- colorRampPalette(c("#2E9FDF", "#FFFFFF", "#E06666"))(200)
-corrplot(or_matrix, method = "color", col = col_palette, is.corr = FALSE, 
-         p.mat = pval_matrix, sig.level = 0.05, insig = "blank", 
-         tl.col = "black", tl.srt = 45, mar = c(0,0,2,0))
 
-# 4. График Каплана-Мейера для TP53
-data\(TP53_Status <- ifelse(data\)TP53 == 1, "Мутация TP53", "Дикий тип (Без мутации)")
-fit_tp53 <- survfit(Surv(TIME, EVENT) ~ TP53_Status, data = data)
-ggsurvplot(fit_tp53, data = data, risk.table = TRUE, pval = TRUE, conf.int = FALSE, 
-           palette = c("#2E9FDF", "#E7B800"), ggtheme = theme_minimal())
+data$TIME <- as.numeric(
+  as.character(data$OS_MONTHS)
+)
 
-# 5. Многофакторная регрессия Кокса (Forest Plot)
-formula_cox <- as.formula(paste("Surv(TIME, EVENT) ~", paste(top_genes, collapse = " + ")))
-cox_model <- coxph(formula_cox, data = data)
-ggforest(cox_model, data = data)
-```
 
+data$EVENT <- ifelse(
+  grepl(
+    "DECEASED|^1",
+    as.character(data$OS_STATUS),
+    ignore.case = TRUE
+  ),
+  1,
+  0
+)
+
+
+data <- data[
+  !is.na(data$TIME) &
+  !is.na(data$EVENT),
+]
+
+
+head(data)
 
 
 
@@ -144,6 +154,257 @@ ggforest(cox_model, data = data)
 ggforest(cox_model, data = data)
 ```
 </details>
+
+<details>
+<summary>2. Анализ взаимодействия генов</summary>
+
+```r
+library(RSQLite)
+library(corrplot)
+
+
+con <- dbConnect(SQLite(), "cancer_data.db")
+
+clinical <- dbGetQuery(
+  con,
+  "SELECT PATIENT_ID FROM clinical"
+)
+
+mutations <- dbGetQuery(
+  con,
+  "SELECT PATIENT_ID, Hugo_Symbol, Variant_Classification
+   FROM mutations"
+)
+
+dbDisconnect(con)
+
+
+top_genes <- c(
+  "PIK3CA",
+  "TP53",
+  "MUC16",
+  "AHNAK2",
+  "SYNE1",
+  "KMT2C",
+  "GATA3",
+  "MAP3K1",
+  "CDH1",
+  "DNAH11"
+)
+
+
+mutations <- mutations[
+  mutations$Variant_Classification != "Silent",
+]
+
+
+data <- clinical
+
+
+for (gene in top_genes) {
+
+  patients <- unique(
+    mutations$PATIENT_ID[
+      mutations$Hugo_Symbol == gene
+    ]
+  )
+
+  data[[gene]] <- ifelse(
+    data$PATIENT_ID %in% patients,
+    1,
+    0
+  )
+}
+
+
+n <- length(top_genes)
+
+p_values <- matrix(
+  1,
+  nrow = n,
+  ncol = n
+)
+
+odds_ratios <- matrix(
+  0,
+  nrow = n,
+  ncol = n
+)
+
+rownames(p_values) <- top_genes
+colnames(p_values) <- top_genes
+
+rownames(odds_ratios) <- top_genes
+colnames(odds_ratios) <- top_genes
+
+
+for (i in 1:(n - 1)) {
+
+  for (j in (i + 1):n) {
+
+    gene1 <- data[[top_genes[i]]]
+    gene2 <- data[[top_genes[j]]]
+
+    table_genes <- table(
+      factor(gene1, levels = c(0, 1)),
+      factor(gene2, levels = c(0, 1))
+    )
+
+    test <- fisher.test(table_genes)
+
+    odds_ratio <- test$estimate
+
+    if (!is.finite(odds_ratio)) {
+      odds_ratio <- 1
+    }
+
+    odds_ratios[i, j] <- log(odds_ratio)
+    odds_ratios[j, i] <- log(odds_ratio)
+
+    p_values[i, j] <- test$p.value
+    p_values[j, i] <- test$p.value
+  }
+}
+
+
+corrplot(
+  odds_ratios,
+  method = "color",
+  is.corr = FALSE,
+  p.mat = p_values,
+  sig.level = 0.05,
+  insig = "blank"
+)
+```
+
+
+<details>
+<summary>3. Анализ выживаемости</summary>
+
+```r
+library(RSQLite)
+library(survival)
+library(survminer)
+
+
+con <- dbConnect(SQLite(), "cancer_data.db")
+
+clinical <- dbGetQuery(
+  con,
+  "SELECT PATIENT_ID, OS_MONTHS, OS_STATUS
+   FROM clinical"
+)
+
+mutations <- dbGetQuery(
+  con,
+  "SELECT PATIENT_ID, Hugo_Symbol, Variant_Classification
+   FROM mutations"
+)
+
+dbDisconnect(con)
+
+
+top_genes <- c(
+  "PIK3CA",
+  "TP53",
+  "MUC16",
+  "AHNAK2",
+  "SYNE1",
+  "KMT2C",
+  "GATA3",
+  "MAP3K1",
+  "CDH1",
+  "DNAH11"
+)
+
+
+mutations <- mutations[
+  mutations$Variant_Classification != "Silent",
+]
+
+
+data <- clinical
+
+
+for (gene in top_genes) {
+
+  patients <- unique(
+    mutations$PATIENT_ID[
+      mutations$Hugo_Symbol == gene
+    ]
+  )
+
+  data[[gene]] <- ifelse(
+    data$PATIENT_ID %in% patients,
+    1,
+    0
+  )
+}
+
+
+data$TIME <- as.numeric(
+  as.character(data$OS_MONTHS)
+)
+
+
+data$EVENT <- ifelse(
+  grepl(
+    "DECEASED|^1",
+    as.character(data$OS_STATUS),
+    ignore.case = TRUE
+  ),
+  1,
+  0
+)
+
+
+data <- data[
+  !is.na(data$TIME) &
+  !is.na(data$EVENT),
+]
+
+
+data$TP53_Status <- ifelse(
+  data$TP53 == 1,
+  "TP53 mutation",
+  "No TP53 mutation"
+)
+
+
+fit <- survfit(
+  Surv(TIME, EVENT) ~ TP53_Status,
+  data = data
+)
+
+
+ggsurvplot(
+  fit,
+  data = data,
+  risk.table = TRUE,
+  pval = TRUE,
+  conf.int = FALSE
+)
+
+
+formula <- as.formula(
+  paste(
+    "Surv(TIME, EVENT) ~",
+    paste(top_genes, collapse = " + ")
+  )
+)
+
+
+cox_model <- coxph(
+  formula,
+  data = data
+)
+
+
+ggforest(
+  cox_model,
+  data = data
+)
+```
 
 
 
