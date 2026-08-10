@@ -54,7 +54,6 @@
 через cBioPortal — ~2000 пациентов с раком молочной железы, 
 мутации + клинические данные о выживаемости
 
-мои исходныи код ---
 
 мои скрипт на языке R:
 
@@ -136,7 +135,7 @@ ggforest(cox_model, data = data)
 
 
 
-<details>
+
 <summary>Развернуть R-код проекта</summary>
 
 ```r
@@ -144,8 +143,8 @@ ggforest(cox_model, data = data)
 
 ggforest(cox_model, data = data)
 ```
-
 </details>
+
 
 
 <details>
