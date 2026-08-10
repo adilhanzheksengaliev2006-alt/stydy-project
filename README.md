@@ -67,7 +67,7 @@ con <- dbConnect(SQLite(), "cancer_data.db")
 
 clinical <- dbGetQuery(
   con,
-  "SELECT PATIENT_ID, OS_MONTHS, OS_STATUS FROM clinical"
+  "SELECT PATIENT_ID, OS_MONTHS, OS_STATUS FROM cancer_data"
 )
 
 mutations <- dbGetQuery(
@@ -139,19 +139,7 @@ data <- data[
 ]
 
 
-head(data)
-
-
-
-
-
-
-<summary>Развернуть R-код проекта</summary>
-
-```r
-ТУТ ВЕСЬ ТВОЙ R-КОД
-
-ggforest(cox_model, data = data)
+head(data, n = 50)
 ```
 </details>
 
@@ -292,7 +280,7 @@ con <- dbConnect(SQLite(), "cancer_data.db")
 clinical <- dbGetQuery(
   con,
   "SELECT PATIENT_ID, OS_MONTHS, OS_STATUS
-   FROM clinical"
+   FROM cancer_data"
 )
 
 mutations <- dbGetQuery(
@@ -392,7 +380,6 @@ formula <- as.formula(
     paste(top_genes, collapse = " + ")
   )
 )
-
 
 cox_model <- coxph(
   formula,
