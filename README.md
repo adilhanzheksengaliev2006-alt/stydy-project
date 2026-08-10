@@ -53,3 +53,227 @@
 * [Breast Cancer, METABRIC](https://www.cbioportal.org/study/summary?id=brca_metabric) 
 через cBioPortal — ~2000 пациентов с раком молочной железы, 
 мутации + клинические данные о выживаемости
+
+мои исходныи код ---
+
+мои скрипт на языке R:
+
+<details>
+<summary><b>Развернуть полный R-код проекта (нажмите для просмотра)</b></summary>
+
+```R
+library(RSQLite)
+library(survival)
+library(survminer)
+library(corrplot)
+
+# 1. Подключение к базе данных и выгрузка данных
+con <- dbConnect(SQLite(), "cancer_data.db")
+top_genes <- c("PIK3CA", "TP53", "MUC16", "AHNAK2", "SYNE1", "KMT2C", "GATA3", "MAP3K1", "CDH1", "DNAH11")
+
+sql_parts <- sapply(top_genes, function(g) {
+  sprintf("MAX(CASE WHEN m.Hugo_Symbol = '%s' AND m.Variant_Classification != 'Silent' THEN 1 ELSE 0 END) as %s", g, g)
+})
+select_clause <- paste(sql_parts, collapse = ",\n        ")
+
+query <- sprintf("
+    SELECT 
+        c.PATIENT_ID, c.OS_MONTHS, c.OS_STATUS,
+        %s
+    FROM cancer_data c
+    LEFT JOIN mutations m ON c.PATIENT_ID = m.PATIENT_ID
+    GROUP BY c.PATIENT_ID
+", select_clause)
+
+data <- dbGetQuery(con, query)
+dbDisconnect(con)
+
+# 2. Предобработка данных
+data\$EVENT <- ifelse(grepl("DECEASED", data\(OS_STATUS) \vert{} grepl("^1", data\)OS_STATUS), 1, 0)
+dataTIME <- as.numeric(as.character(dataOS_MONTHS))
+data <- data[!is.na(data\(TIME) & !is.na(data\)EVENT), ]
+
+# 3. Построение матрицы взаимодействий (Тест Фишера)
+n_genes <- length(top_genes)
+pval_matrix <- matrix(1, nrow = n_genes, ncol = n_genes, dimnames = list(top_genes, top_genes))
+or_matrix <- matrix(1, nrow = n_genes, ncol = n_genes, dimnames = list(top_genes, top_genes))
+mutation_matrix <- as.matrix(data[, top_genes])
+
+for (i in 1:(n_genes-1)) {
+  for (j in (i+1):n_genes) {
+    tbl <- table(mutation_matrix[, i], mutation_matrix[, j])
+    full_tbl <- matrix(0, nrow=2, ncol=2)
+    full_tbl[as.numeric(rownames(tbl))+1, as.numeric(colnames(tbl))+1] <- tbl
+    f_test <- fisher.test(full_tbl)
+    log_or <- log(f_test\$estimate)
+    if (is.infinite(log_or)) log_or <- 0
+    or_matrix[i, j] <- log_or
+    or_matrix[j, i] <- log_or
+    pval_matrix[i, j] <- f_test\$p.value
+    pval_matrix[j, i] <- f_test\$p.value
+  }
+}
+
+col_palette <- colorRampPalette(c("#2E9FDF", "#FFFFFF", "#E06666"))(200)
+corrplot(or_matrix, method = "color", col = col_palette, is.corr = FALSE, 
+         p.mat = pval_matrix, sig.level = 0.05, insig = "blank", 
+         tl.col = "black", tl.srt = 45, mar = c(0,0,2,0))
+
+# 4. График Каплана-Мейера для TP53
+data\(TP53_Status <- ifelse(data\)TP53 == 1, "Мутация TP53", "Дикий тип (Без мутации)")
+fit_tp53 <- survfit(Surv(TIME, EVENT) ~ TP53_Status, data = data)
+ggsurvplot(fit_tp53, data = data, risk.table = TRUE, pval = TRUE, conf.int = FALSE, 
+           palette = c("#2E9FDF", "#E7B800"), ggtheme = theme_minimal())
+
+# 5. Многофакторная регрессия Кокса (Forest Plot)
+formula_cox <- as.formula(paste("Surv(TIME, EVENT) ~", paste(top_genes, collapse = " + ")))
+cox_model <- coxph(formula_cox, data = data)
+ggforest(cox_model, data = data)
+```
+
+</details>
+
+sql код 
+````markdown
+<details>
+<summary>Код проекта</summary>
+
+```python
+import pandas as pd
+import sqlite3
+import matplotlib.pyplot as plt
+
+
+MUTATIONS_FILE = "metabric_data/data_mutations.txt"
+CLINICAL_FILE = "metabric_data/data_clinical_patient.txt"
+GENE_OF_INTEREST = "TP53"
+
+
+mutations = pd.read_csv(
+    MUTATIONS_FILE,
+    sep="\t",
+    comment="#"
+)
+
+clinical = pd.read_csv(
+    CLINICAL_FILE,
+    sep="\t",
+    comment="#"
+)
+
+
+patient_ids = clinical["PATIENT_ID"].tolist()
+
+
+def find_patient(sample):
+    for patient in patient_ids:
+        if str(sample).startswith(patient):
+            return patient
+    return None
+
+
+mutations["PATIENT_ID"] = mutations[
+    "Tumor_Sample_Barcode"
+].apply(find_patient)
+
+
+conn = sqlite3.connect("cancer_data.db")
+
+
+mutations.to_sql(
+    "mutations",
+    conn,
+    if_exists="replace",
+    index=False
+)
+
+clinical.to_sql(
+    "clinical",
+    conn,
+    if_exists="replace",
+    index=False
+)
+
+
+query_genes = """
+SELECT
+    Hugo_Symbol AS gene,
+    COUNT(DISTINCT PATIENT_ID) AS patients
+FROM mutations
+GROUP BY Hugo_Symbol
+ORDER BY patients DESC
+LIMIT 15
+"""
+
+
+top_genes = pd.read_sql(
+    query_genes,
+    conn
+)
+
+print(top_genes)
+
+
+query_survival = f"""
+SELECT
+    CASE
+        WHEN mutations.PATIENT_ID IS NOT NULL
+        THEN 'Mutation'
+        ELSE 'No mutation'
+    END AS group_name,
+
+    COUNT(DISTINCT clinical.PATIENT_ID) AS patients,
+
+    ROUND(
+        AVG(clinical.OS_MONTHS),
+        1
+    ) AS average_survival
+
+FROM clinical
+
+LEFT JOIN (
+    SELECT DISTINCT PATIENT_ID
+    FROM mutations
+    WHERE Hugo_Symbol = '{GENE_OF_INTEREST}'
+) AS mutations
+
+ON clinical.PATIENT_ID = mutations.PATIENT_ID
+
+GROUP BY group_name
+"""
+
+
+survival = pd.read_sql(
+    query_survival,
+    conn
+)
+
+print(survival)
+
+
+conn.close()
+
+
+plt.figure(figsize=(8, 5))
+
+plt.barh(
+    top_genes["gene"],
+    top_genes["patients"]
+)
+
+plt.xlabel("Patients")
+plt.ylabel("Gene")
+plt.title("Most frequently mutated genes")
+
+plt.gca().invert_yaxis()
+
+plt.tight_layout()
+
+plt.savefig(
+    "top_mutated_genes.png",
+    dpi=150
+)
+````
+
+</details>
+```
