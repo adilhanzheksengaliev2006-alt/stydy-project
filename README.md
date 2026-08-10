@@ -155,7 +155,7 @@ con <- dbConnect(SQLite(), "cancer_data.db")
 
 clinical <- dbGetQuery(
   con,
-  "SELECT PATIENT_ID FROM clinical"
+  "SELECT PATIENT_ID FROM cancer_data"
 )
 
 mutations <- dbGetQuery(
